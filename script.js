@@ -1,5 +1,7 @@
 // Airtable OpenAPI 3.1.0 Schema Generator for GPT Actions (Read-Only)
 // Compatible with Custom GPT Actions.
+// Written by Yaniv Golan
+// Original repo: https://github.com/yaniv-golan/airtable-openapi-schema-generator/
 
 // Include standard Airtable field type mappings
 const AIRTABLE_TO_OPENAPI_DEFS = {
