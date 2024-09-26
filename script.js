@@ -1,6 +1,7 @@
 // Airtable OpenAPI 3.1.0 Schema Generator for GPT Actions (Read-Only)
-// This script generates an OpenAPI 3.1.0 schema for read-only operations on an Airtable base,
-// compatible with Custom GPT Actions.
+// Compatible with Custom GPT Actions.
+
+// We use the global 'base' object provided by Airtable.
 
 // Include standard Airtable field type mappings
 const AIRTABLE_TO_OPENAPI_DEFS = {
@@ -9,8 +10,8 @@ const AIRTABLE_TO_OPENAPI_DEFS = {
     'url': { 'type': 'string', 'format': 'uri' },
     'multilineText': { 'type': 'string' },
     'number': { 'type': 'number' },
-    'percent': { 'type': 'number', 'format': 'percent' }, // Added format
-    'currency': { 'type': 'number', 'format': 'currency' }, // Added format
+    'percent': { 'type': 'number', 'format': 'percent' },
+    'currency': { 'type': 'number', 'format': 'currency' },
     'singleSelect': { 'type': 'string' },
     'multipleSelects': { 'type': 'array', 'items': { 'type': 'string' } },
     'singleCollaborator': {
@@ -33,10 +34,6 @@ const AIRTABLE_TO_OPENAPI_DEFS = {
             },
             'required': ['id', 'email']
         }
-    },
-    'multipleRecordLinks': {
-        'type': 'array',
-        'items': { 'type': 'string' }
     },
     'date': { 'type': 'string', 'format': 'date' },
     'dateTime': { 'type': 'string', 'format': 'date-time' },
@@ -98,6 +95,11 @@ const AIRTABLE_TO_OPENAPI_DEFS = {
         'required': ['id', 'email']
     }
 };
+
+// Helper function to get a table by its ID
+function getTableById(base, tableId) {
+    return base.tables.find((table) => table.id === tableId);
+}
 
 function getTableTemplate(table) {
     return {
@@ -201,22 +203,46 @@ function getFieldType(f) {
         return { type: 'string', description: `Unknown field type for ${f.name}` };
     }
 
-    var field_schema = AIRTABLE_TO_OPENAPI_DEFS[f.type];
+    let field_schema;
 
-    if (!field_schema) {
-        console.warn(`No OpenAPI definition found for Airtable field type: ${f.type}`);
-        unmappedFieldTypes.add(f.type);
-        return { type: 'string', description: `Unmapped Airtable type: ${f.type}` };
-    }
+    if (f.type === 'multipleRecordLinks') {
+        // Handle linked records
+        let linkedTableId = f.options.linkedTableId;
+        let linkedTable = getTableById(base, linkedTableId);
+        if (!linkedTable) {
+            console.warn(`Table with ID ${linkedTableId} does not exist.`);
+            linkedTable = { name: 'UnknownTable' }; // Fallback
+        }
+        let linkedTableName = linkedTable.name;
+        let linkedSchemaName = getSchemaName({ name: linkedTableName });
 
-    field_schema = JSON.parse(JSON.stringify(field_schema)); // Deep clone
+        field_schema = {
+            'type': 'array',
+            'items': { 'type': 'string' },
+            // Preserve existing description if available
+            'description': f.description || `Array of record IDs linking to the '${linkedTableName}' table.`,
+            // Include an OpenAPI extension to indicate the linked table
+            'x-linkedTable': linkedSchemaName
+        };
+    } else {
+        field_schema = AIRTABLE_TO_OPENAPI_DEFS[f.type];
 
-    // If descriptions are available in the Scripting Extension, you can include them:
-    // field_schema.description = f.description;
+        if (!field_schema) {
+            console.warn(`No OpenAPI definition found for Airtable field type: ${f.type}`);
+            unmappedFieldTypes.add(f.type);
+            return { type: 'string', description: `Unmapped Airtable type: ${f.type}` };
+        }
 
-    if (f.type === 'singleSelect' || f.type === 'multipleSelects') {
-        if (f.options && f.options.choices) {
+        field_schema = JSON.parse(JSON.stringify(field_schema)); // Deep clone
+
+        // Handle enums for singleSelect and multipleSelects
+        if ((f.type === 'singleSelect' || f.type === 'multipleSelects') && f.options?.choices) {
             field_schema.enum = f.options.choices.map((o) => o.name);
+        }
+
+        // Include the existing field description if available
+        if (f.description) {
+            field_schema.description = f.description;
         }
     }
 
@@ -224,7 +250,7 @@ function getFieldType(f) {
 }
 
 function generateSchema(table) {
-    var schema = {};
+    let schema = {};
     for (let f of table.fields) {
         schema[f.name] = getFieldType(f);
     }
@@ -270,7 +296,7 @@ function getSchemaName(table) {
 
 function baseToOpenAPI(base) {
     const base_path = `/${base.id}`;
-    var base_structure = {
+    let base_structure = {
         openapi: '3.1.0',
         info: {
             title: `${base.name} API (Read-Only)`,
@@ -296,15 +322,15 @@ function baseToOpenAPI(base) {
         paths: {}
     };
 
-    for (var table of base.tables) {
-        var table_structure = getTableTemplate(table);
-        var content_def = generateSchema(table);
+    for (let table of base.tables) {
+        let table_structure = getTableTemplate(table);
+        let content_def = generateSchema(table);
 
-        var schema_name = getSchemaName(table);
+        let schema_name = getSchemaName(table);
 
         base_structure.components.schemas[schema_name] = content_def;
 
-        var response_schema = generateResponseBody(schema_name);
+        let response_schema = generateResponseBody(schema_name);
         base_structure.components.schemas[`List${schema_name}Response`] = response_schema;
 
         const table_path = `${base_path}/${encodeURIComponent(table.name)}`;
