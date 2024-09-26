@@ -35,7 +35,7 @@ const AIRTABLE_TO_OPENAPI_DEFS = {
             'required': ['id', 'email']
         }
     },
-    'date': { 'type': 'string', 'format': 'date' },
+   'date': { 'type': 'string', 'format': 'date' },
     'dateTime': { 'type': 'string', 'format': 'date-time' },
     'phoneNumber': { 'type': 'string' },
     'multipleAttachments': {
@@ -110,7 +110,7 @@ function getTableTemplate(table) {
             parameters: [
                 {
                     "in": "query",
-                    "name": "fields[]",
+                    "name": "fields", // Changed from "fields[]"
                     "schema": {
                         "type": "array",
                         "items": {
