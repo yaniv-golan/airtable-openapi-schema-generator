@@ -2,14 +2,15 @@
 // This script generates an OpenAPI 3.1.0 schema for read-only operations on an Airtable base,
 // compatible with Custom GPT Actions.
 
+// Include standard Airtable field type mappings
 const AIRTABLE_TO_OPENAPI_DEFS = {
     'singleLineText': { 'type': 'string' },
     'email': { 'type': 'string', 'format': 'email' },
     'url': { 'type': 'string', 'format': 'uri' },
     'multilineText': { 'type': 'string' },
     'number': { 'type': 'number' },
-    'percent': { 'type': 'number' },
-    'currency': { 'type': 'number' },
+    'percent': { 'type': 'number', 'format': 'percent' }, // Added format
+    'currency': { 'type': 'number', 'format': 'currency' }, // Added format
     'singleSelect': { 'type': 'string' },
     'multipleSelects': { 'type': 'array', 'items': { 'type': 'string' } },
     'singleCollaborator': {
@@ -107,7 +108,7 @@ function getTableTemplate(table) {
             parameters: [
                 {
                     "in": "query",
-                    "name": "fields",
+                    "name": "fields[]",
                     "schema": {
                         "type": "array",
                         "items": {
@@ -115,67 +116,65 @@ function getTableTemplate(table) {
                         }
                     },
                     "style": "form",
-                    "explode": true
+                    "explode": true,
+                    "description": "Array of field names to be returned in the records. If not specified, all fields are returned."
                 },
                 {
                     "in": "query",
                     "name": "filterByFormula",
                     "schema": {
                         "type": "string"
-                    }
+                    },
+                    "description": "A formula used to filter records."
                 },
                 {
                     "in": "query",
                     "name": "maxRecords",
                     "schema": {
                         "type": "integer"
-                    }
+                    },
+                    "description": "The maximum total number of records that will be returned in your requests."
                 },
                 {
                     "in": "query",
                     "name": "pageSize",
                     "schema": {
                         "type": "integer"
-                    }
+                    },
+                    "description": "The number of records returned in each request. Must be less than or equal to 100."
                 },
                 {
                     "in": "query",
-                    "name": "sort",
+                    "name": "sort[0][field]",
                     "schema": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "field": {
-                                    "type": "string"
-                                },
-                                "direction": {
-                                    "type": "string",
-                                    "enum": [
-                                        "asc",
-                                        "desc"
-                                    ]
-                                }
-                            },
-                            "required": ["field"]
-                        }
+                        "type": "string"
                     },
-                    "style": "form",
-                    "explode": true
+                    "description": "The field name to sort on."
+                },
+                {
+                    "in": "query",
+                    "name": "sort[0][direction]",
+                    "schema": {
+                        "type": "string",
+                        "enum": ["asc", "desc"]
+                    },
+                    "description": "The sort direction: 'asc' or 'desc'."
                 },
                 {
                     "in": "query",
                     "name": "view",
                     "schema": {
                         "type": "string"
-                    }
+                    },
+                    "description": "The name or ID of a view in the table."
                 },
                 {
                     "in": "query",
                     "name": "offset",
                     "schema": {
                         "type": "string"
-                    }
+                    },
+                    "description": "The pagination offset."
                 }
             ],
             responses: {
@@ -194,6 +193,8 @@ function getTableTemplate(table) {
     };
 }
 
+let unmappedFieldTypes = new Set();
+
 function getFieldType(f) {
     if (typeof f.type === 'undefined') {
         console.warn(`Field type is undefined for field: ${f.name}`);
@@ -204,22 +205,27 @@ function getFieldType(f) {
 
     if (!field_schema) {
         console.warn(`No OpenAPI definition found for Airtable field type: ${f.type}`);
+        unmappedFieldTypes.add(f.type);
         return { type: 'string', description: `Unmapped Airtable type: ${f.type}` };
     }
 
     field_schema = JSON.parse(JSON.stringify(field_schema)); // Deep clone
-    field_schema.description = f.description;
+
+    // If descriptions are available in the Scripting Extension, you can include them:
+    // field_schema.description = f.description;
 
     if (f.type === 'singleSelect' || f.type === 'multipleSelects') {
-        field_schema.enum = f.options.choices.map((o) => o.name);
+        if (f.options && f.options.choices) {
+            field_schema.enum = f.options.choices.map((o) => o.name);
+        }
     }
 
     return field_schema;
 }
 
-function generateSchema(table_schema) {
+function generateSchema(table) {
     var schema = {};
-    for (let f of table_schema.fields) {
+    for (let f of table.fields) {
         schema[f.name] = getFieldType(f);
     }
 
@@ -317,10 +323,11 @@ output.markdown(`Copy the following JSON and paste it into the **Schema** input 
 output.text(schema_json);
 
 // Log any fields that weren't mapped
-let unmappedFields = Object.keys(AIRTABLE_TO_OPENAPI_DEFS).filter(key => AIRTABLE_TO_OPENAPI_DEFS[key] === undefined);
-if (unmappedFields.length > 0) {
+if (unmappedFieldTypes.size > 0) {
     output.markdown(`\n## Warning: Unmapped Field Types`);
     output.markdown(`The following Airtable field types were not mapped to OpenAPI types:`);
-    unmappedFields.forEach(field => output.markdown(`- ${field}`));
+    for (let fieldType of unmappedFieldTypes) {
+        output.markdown(`- ${fieldType}`);
+    }
     output.markdown(`These fields have been set to type 'string' in the schema. You may want to update their definitions manually.`);
 }
